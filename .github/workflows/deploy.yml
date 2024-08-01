@@ -1,0 +1,72 @@
+# Simple workflow for deploying static content to GitHub Pages
+name: Deploy static content to Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ['main']
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets the GITHUB_TOKEN permissions to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  # Single deploy job since we're just deploying
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          docker build -t app-fronted .
+          docker save app-fronted -o ./app-fronted.tar
+          chmod 644 ./app-fronted.tar
+
+      - name: Upload the Docker image to the server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "./app-fronted.tar"
+          target: "~/app-fronted.tar"
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            # Stop the container if it exists
+            docker stop app-fronted || true
+
+            # Remove the container if it exists
+            docker rm app-fronted || true
+
+            # Remove the image if it exists
+            docker rmi app-fronted || true
+
+            # Load the new Docker image from the tar file
+            docker load -i ~/app-fronted.tar/app-fronted.tar
+
+            # Run the new Docker container in detached mode, mapping port 80 to the host
+            docker run -d --name app-fronted -p 80:80 app-fronted
+
+            # Clean up by removing the tar file
+            rm -rf ~/app-fronted.tar
